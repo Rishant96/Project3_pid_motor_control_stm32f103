@@ -6,6 +6,7 @@ extern uint32_t _estack;
 extern uint32_t _sdata, _edata;
 extern uint32_t _sbss, _ebss;
 extern uint32_t _etext;
+extern uint32_t _sidata;
 
 
 /* Handlers */

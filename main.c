@@ -61,7 +61,15 @@ static void uart_init(void)
 
 static void tim2_init(void)
 {
-
+	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+	TIM2->PSC = 71;
+	TIM2->ARR = 49;
+	TIM2->CCR1 = 25;
+	
+	TIM2->CCMR1 = TIM_CCMR1_OC1M_PWM1 | TIM_CCMR1_OC1PE;
+	TIM2->CCER  = TIM_CCER_CC1E;
+	
+	TIM2->CR1 = TIM_CR1_CEN;
 }
 
 void NMI_Handler(void)

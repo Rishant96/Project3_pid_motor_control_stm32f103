@@ -99,6 +99,10 @@ typedef struct {
 #define TIM_DIER_UIE      (1U << 0) 
 #define TIM_SR_UIF        (1U << 0)   
 
+#define TIM_CCMR1_OC1PE   (1U << 3)
+#define TIM_CCMR1_OC1M_PWM1  (0x6U << 4)
+#define TIM_CCER_CC1E     (1U << 0)
+
 typedef struct {
     volatile uint32_t IMR;
     volatile uint32_t EMR;
