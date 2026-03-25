@@ -124,6 +124,39 @@ void NMI_Handler(void)
 	}
 }
 
+typedef struct {
+  int32_t kp, ki, kd;
+  int32_t integral, integral_max;
+  int32_t prev_error;
+  int32_t output_min, output_max;
+} PID_State;
+
+int32_t pid_update(PID_State *pid, int32_t setpoint, int32_t measurement)
+{
+    int32_t error;
+    int32_t derivative;
+    int32_t output;
+
+    error = setpoint - measurement;
+
+    pid->integral += error;
+    if (pid->integral > pid->integral_max)  pid->integral = pid->integral_max;
+    if (pid->integral < -pid->integral_max) pid->integral = -pid->integral_max;
+
+    derivative = error - pid->prev_error;
+
+    output = (pid->kp * error
+            + pid->ki * pid->integral
+            + pid->kd * derivative) >> 8;
+
+    pid->prev_error = error;
+
+    if (output > pid->output_max) output = pid->output_max;
+    if (output < pid->output_min) output = pid->output_min;
+
+    return output;
+}
+
 static void delay(volatile uint32_t count)
 {
     while (count--);
@@ -131,6 +164,19 @@ static void delay(volatile uint32_t count)
 
 int main(void)
 {
+    PID_State pid;
+	pid.kp = 256;
+	pid.ki = 0;
+	pid.kd = 0;
+	pid.integral = 0;
+	pid.prev_error = 0;
+	pid.integral_max = 500;
+	pid.output_min = 0;
+	pid.output_max = 49;
+	
+    uint16_t adc_val;
+    int32_t output;
+	
 	clock_init();
 	gpio_init();
 	adc1_init();
@@ -139,14 +185,27 @@ int main(void)
 	
 	uart_write("Project 3 - PID Motor Control\r\n");
 
-	for (;;) 
-	{		
-		uint16_t val = adc1_read();
-		uart_write("ADC: ");
-		uart_print_num(val);
-		uart_write("\r\n");
-		
-		delay(720000);
-	} /* Using interrupts for flow control */
+	pid.kp = 256;          /* 1.0 in Q8.8 */
+    pid.ki = 0;
+    pid.kd = 0;
+    pid.integral_max = 500;
+    pid.output_min = 0;
+    pid.output_max = 49;   /* Matches TIM2 ARR */
+
+    uart_write("Project 3 - PID Motor Control\r\n");
+
+    for (;;) {
+        adc_val = adc1_read();
+        output = pid_update(&pid, 2048, (int32_t)adc_val);
+        TIM2->CCR1 = (uint32_t)output;
+
+        uart_write("ADC: ");
+        uart_print_num(adc_val);
+        uart_write(" PWM: ");
+        uart_print_num((uint16_t)output);
+        uart_write("\r\n");
+
+        delay(720000);
+    } /* Using interrupts for flow control */
 
 }
