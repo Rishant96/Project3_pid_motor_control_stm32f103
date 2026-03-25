@@ -183,15 +183,6 @@ int main(void)
 	uart_init();
 	tim2_init();
 	
-	uart_write("Project 3 - PID Motor Control\r\n");
-
-	pid.kp = 256;          /* 1.0 in Q8.8 */
-    pid.ki = 0;
-    pid.kd = 0;
-    pid.integral_max = 500;
-    pid.output_min = 0;
-    pid.output_max = 49;   /* Matches TIM2 ARR */
-
     uart_write("Project 3 - PID Motor Control\r\n");
 
     for (;;) {
