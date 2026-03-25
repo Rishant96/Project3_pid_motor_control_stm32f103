@@ -38,6 +38,30 @@ static void gpio_init(void)
 	/* Setup Pin 9 */
 	GPIOA->CRH &= ~(0xFU << 4);
 	GPIOA->CRH |=  (0xBU << 4);
+	
+	/* Setup Pin 1 */
+	GPIOA->CRL &= ~(0xFU << 4);
+}
+
+static void adc1_init(void)
+{
+	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+	
+    ADC1->SQR3 = 1;
+
+    ADC1->CR2 |= ADC_CR2_ADON;
+
+    ADC1->CR2 |= ADC_CR2_RSTCAL;
+    while (ADC1->CR2 & ADC_CR2_RSTCAL);
+    ADC1->CR2 |= ADC_CR2_CAL;
+    while (ADC1->CR2 & ADC_CR2_CAL);
+}
+
+static uint16_t adc1_read(void)
+{
+    ADC1->CR2 |= ADC_CR2_ADON;
+    while (!(ADC1->SR & ADC_SR_EOC));
+    return (uint16_t)ADC1->DR;
 }
 
 static void uart_putc(char c)
@@ -50,6 +74,26 @@ static void uart_write(const char *s)
 {
     while (*s) {
         uart_putc(*s++);
+    }
+}
+
+static void uart_print_num(uint16_t val)
+{
+    char buf[6];
+    int i = 0;
+
+    if (val == 0) {
+        uart_putc('0');
+        return;
+    }
+
+    while (val > 0) {
+        buf[i++] = '0' + (val % 10);
+        val /= 10;
+    }
+
+    while (i > 0) {
+        uart_putc(buf[--i]);
     }
 }
 
@@ -80,15 +124,29 @@ void NMI_Handler(void)
 	}
 }
 
+static void delay(volatile uint32_t count)
+{
+    while (count--);
+}
+
 int main(void)
 {
 	clock_init();
 	gpio_init();
+	adc1_init();
 	uart_init();
 	tim2_init();
 	
 	uart_write("Project 3 - PID Motor Control\r\n");
 
-	for (;;) { } /* Using interrupts for flow control */
+	for (;;) 
+	{		
+		uint16_t val = adc1_read();
+		uart_write("ADC: ");
+		uart_print_num(val);
+		uart_write("\r\n");
+		
+		delay(720000);
+	} /* Using interrupts for flow control */
 
 }

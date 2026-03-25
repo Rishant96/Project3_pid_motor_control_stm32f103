@@ -56,6 +56,8 @@ typedef struct {
 #define RCC_APB1ENR_TIM2EN   (1U << 0)
 #define RCC_APB1ENR_CAN1EN   (1U << 25)
 
+#define RCC_APB2ENR_ADC1EN (1U << 9)
+
 typedef struct {
     volatile uint32_t CRL;
     volatile uint32_t CRH;
@@ -170,5 +172,35 @@ typedef struct {
 } CAN1_t;
 
 #define CAN1              ((CAN1_t *)(CAN1_BASE + 0x0000))
+
+typedef struct {
+    volatile uint32_t SR;
+    volatile uint32_t CR1;
+    volatile uint32_t CR2;
+    volatile uint32_t SMPR1;
+    volatile uint32_t SMPR2;
+    volatile uint32_t JOFR1;
+    volatile uint32_t JOFR2;
+    volatile uint32_t JOFR3;
+    volatile uint32_t JOFR4;
+    volatile uint32_t HTR;
+    volatile uint32_t LTR;
+    volatile uint32_t SQR1;
+    volatile uint32_t SQR2;
+    volatile uint32_t SQR3;
+    volatile uint32_t JSQR;
+    volatile uint32_t JDR1;
+    volatile uint32_t JDR2;
+    volatile uint32_t JDR3;
+    volatile uint32_t JDR4;
+    volatile uint32_t DR;
+} ADC_t;
+
+#define ADC1              ((ADC_t *)(APB2_BASE + 0x2400))
+
+#define ADC_SR_EOC        (1U << 1)
+#define ADC_CR2_ADON      (1U << 0)
+#define ADC_CR2_CAL       (1U << 2)
+#define ADC_CR2_RSTCAL    (1U << 3)
 
 #endif
