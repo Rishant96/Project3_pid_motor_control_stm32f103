@@ -131,7 +131,7 @@ void (* const vector_table[])(void) = {
 void Reset_Handler(void)
 {
     /* Copy data */
-    uint32_t *src = &_etext;
+    uint32_t *src = &_sidata;
     uint32_t *dst = &_sdata;
     while (dst < &_edata)
         *dst++ = *src++;
