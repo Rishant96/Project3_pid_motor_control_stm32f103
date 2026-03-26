@@ -187,7 +187,12 @@ int main(void)
 
     for (;;) {
         adc_val = adc1_read();
+		/* disabling pid for now */
+#if 0
         output = pid_update(&pid, 2048, (int32_t)adc_val);
+#else
+		output = (adc_val * pid.output_max) / 4096;
+#endif
         TIM2->CCR1 = (uint32_t)output;
 
         uart_write("ADC: ");
