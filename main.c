@@ -54,6 +54,7 @@ static adc_count_t adc1_read(void)
     ADC1->CR2 |= ADC_CR2_ADON;
     while (!(ADC1->SR & ADC_SR_EOC)) { };
 	result.raw = (uint16_t)ADC1->DR;
+	Assert(result.raw <= 4095);
     return result;
 }
 
@@ -202,6 +203,7 @@ int main(void)
 		setpoint.raw = 2048;
         output = pid_update(&pid, setpoint, adc_val);
 #else
+		setpoint.raw = 0;
 		output.duty_cycle.raw = (adc_val.raw * pid.output_max) / 4096;
 #endif
         TIM2->CCR1 = (uint32_t)output.duty_cycle.raw;
@@ -217,7 +219,7 @@ int main(void)
 		uart_print_num(output.duty_cycle.raw);
         uart_write("\r\n");
 
-        delay(720000);
+        delay(720000); /* Replace with SysTick Sunday */
 		tick++;
     } /* Using interrupts for flow control */
 }

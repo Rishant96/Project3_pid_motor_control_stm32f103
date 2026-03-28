@@ -220,7 +220,7 @@ typedef struct {
 
 typedef struct {
 	duty_t duty_cycle;
-	uint8_t _;
+	uint8_t _; 				 /* Padding byte */
 	int16_t error;
 } pid_update_result;
 
