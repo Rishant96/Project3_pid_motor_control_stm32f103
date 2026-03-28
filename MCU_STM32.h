@@ -157,9 +157,12 @@ typedef struct {
 #define USART1            ((USART_t *)(APB2_BASE + 0x3800))
 
 #define USART_SR_TXE      (1U << 7)
+#define USART_SR_RXNE      (1U << 5)
 
 #define USART_CR1_UE      (1U << 13)
 #define USART_CR1_TE      (1U << 3)
+#define USART_CR1_RE	  (1U << 2)
+#define USART_CR1_RWU	  (1U << 1)
 
 typedef struct {
     volatile uint32_t SR;
@@ -223,5 +226,25 @@ typedef struct {
 	uint8_t _; 				 /* Padding byte */
 	int16_t error;
 } pid_update_result;
+
+typedef struct {
+	uint8_t count;
+	char line[64];
+} cmd_buffer_64;
+
+typedef enum {
+	PID_CMD_KP,
+	PID_CMD_KI,
+	PID_CMD_KD,
+	PID_CMD_SET,
+	PID_CMD_INSPECT,
+	
+	PID_CMD_COUNT
+} PID_CMD;
+
+typedef struct {
+	PID_CMD type;
+	fixed16_t param;
+} usart_pid_cmd;
 
 #endif

@@ -32,20 +32,24 @@ static void gpio_init(void)
 				  |  RCC_APB2ENR_AFIOEN
 				  |  RCC_APB2ENR_USART1EN;
 	
-	/* Setup Pin 13 */
-	GPIOC->CRH &= ~(0xFU << 20);
-	GPIOC->CRH |=  (0x2U << 20);
-	
 	/* Setup Pin 0 */
 	GPIOA->CRL &= ~(0xFU << 0);
 	GPIOA->CRL |=  (0xBU << 0);
+	
+	/* Setup Pin 1 */
+	GPIOA->CRL &= ~(0xFU << 4);
 	
 	/* Setup Pin 9 */
 	GPIOA->CRH &= ~(0xFU << 4);
 	GPIOA->CRH |=  (0xBU << 4);
 	
-	/* Setup Pin 1 */
-	GPIOA->CRL &= ~(0xFU << 4);
+	/* Setup Pin 10 */
+	GPIOA->CRH &= ~(0xFU << 8);
+	GPIOA->CRH |=  (0x4U << 8);
+		
+	/* Setup Pin 13 */
+	GPIOC->CRH &= ~(0xFU << 20);
+	GPIOC->CRH |=  (0x2U << 20);
 }
 
 static adc_count_t adc1_read(void)
@@ -114,7 +118,15 @@ static void uart_print_num(int32_t val)
 static void uart_init(void)
 {
 	USART1->BRR = 0x271;
-	USART1->CR1 = USART_CR1_UE | USART_CR1_TE;
+	USART1->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
+}
+
+void NMI_Handler(void)
+{
+	if (RCC->CIR & RCC_CIR_CSSF) {
+		RCC->CIR |= RCC_CIR_CSSC;
+		uart_write("HSE Failure\r\n");
+	}
 }
 
 static void tim2_init(void)
@@ -128,14 +140,6 @@ static void tim2_init(void)
 	TIM2->CCER  = TIM_CCER_CC1E;
 	
 	TIM2->CR1 = TIM_CR1_CEN;
-}
-
-void NMI_Handler(void)
-{
-	if (RCC->CIR & RCC_CIR_CSSF) {
-		RCC->CIR |= RCC_CIR_CSSC;
-		uart_write("HSE Failure\r\n");
-	}
 }
 
 pid_update_result pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t measurement)
@@ -171,54 +175,232 @@ pid_update_result pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t
     return result;
 }
 
+static uint8_t usart_pid_cmd_type_match_64(char *buffer, uint8_t len, const char *token)
+{
+	uint8_t result, pos;
+	
+	if (len == 0 || *token == '\0')
+	{
+		result = 0;
+	}
+	else
+	{
+		pos = 0;
+		result = 1;
+		
+		while (pos < len)
+		{
+			if (token[pos] == '\0' || token[pos] != buffer[pos])
+			{
+				result = 0;
+				break;
+			}
+			pos++;
+		}
+		
+		if (token[len] != '\0') result = 0;
+	}
+	
+	return result;
+}
+
+static int16_t parse_int(char *int_str, uint8_t len)
+{
+	int16_t result;
+	uint8_t pos, base;
+	
+	result = 0; 
+	base = 1;
+	pos = len;
+	
+	Assert(len > 0);
+	
+	while (pos-- > 0)
+	{
+		char c = int_str[pos];
+		Assert( c >= '0' && c <= '9');
+		
+		result += (c - '0') * base;
+		
+		base *= 10;
+	}
+	
+	return result;
+}
+
+static usart_pid_cmd usart_pid_cmd_parse_64(cmd_buffer_64 *buffer)
+{
+	usart_pid_cmd result;
+	uint8_t pos, name_len;
+	char *c;
+	
+	result.type = PID_CMD_COUNT;
+	result.param.raw = 0;
+	
+	pos = 0;
+	c = buffer->line;
+	name_len = buffer->count;
+		
+	Assert(*c != ' ' && buffer->count > 0);	
+		
+	while (pos++ < buffer->count && *c++ != ' ' )
+	{
+		name_len = pos;
+	}
+	
+	/* get param */
+	if (name_len != buffer->count) result.param.raw = fixed16_from_int(parse_int(c, buffer->count - pos));
+	
+	/* get type */
+	if (usart_pid_cmd_type_match_64(buffer->line, name_len, "KP"))
+	{
+		result.type = PID_CMD_KP;
+	}
+	else if (usart_pid_cmd_type_match_64(buffer->line, name_len, "KI"))
+	{
+		result.type = PID_CMD_KI;
+	}
+	else if (usart_pid_cmd_type_match_64(buffer->line, name_len, "KD"))
+	{
+		result.type = PID_CMD_KD;
+	}
+	else if (usart_pid_cmd_type_match_64(buffer->line, name_len, "SET"))
+	{
+		result.type = PID_CMD_SET;
+	}	
+	else if (usart_pid_cmd_type_match_64(buffer->line, name_len, "INSPECT"))
+	{
+		result.type = PID_CMD_INSPECT;
+	}
+	
+	return result;
+}
+
 int main(void)
 {
 	static uint32_t tick;
-	
+	cmd_buffer_64 usart_cmd_64;
+	int i;
     pid_state_t pid;
-    pid.kp.raw = fixed16_Kp_from_frac(49, 4095);
-    pid.ki.raw = fixed16_Ki(0, 5, 30);
-    pid.kd.raw = fixed16_Kd(0, 50);
+	fixed16_t tmp_kp, tmp_ki, tmp_kd;
+	
+    pid.kp.raw = tmp_kp.raw = fixed16_Kp_from_frac(49, 4095);
+    pid.ki.raw = tmp_ki.raw = fixed16_Ki(0, 5, 30);
+    pid.kd.raw = tmp_kd.raw = fixed16_Kd(0, 50);
     pid.integral = 0;
     pid.prev_error = 0;
     pid.integral_max = 500;
     pid.output_min = 0;
     pid.output_max = 49;    /* MUST set — zero clamps all output */
+		
+	for (i = 0; i < 256; i++)
+	{
+		usart_cmd_64.line[i] = 0;
+	}
+	usart_cmd_64.count = 0;
 	
 	clock_init();
 	gpio_init();
-	adc1_init();
 	uart_init();
+	adc1_init();
 	tim2_init();
 	
     uart_write("Project 3 - PID Motor Control\r\n");
 	tick = 0;
     for (;;) {
-		pid_update_result output;
-		adc_count_t setpoint, adc_val;
-		
-        adc_val = adc1_read();
-		/* disabling pid for now */
+		{
+			usart_pid_cmd req;
+			if (USART1->SR & USART_SR_RXNE)
+			{
+				char c = USART1->DR & 0xFF;
+				if (c == '\r' || c == '\n')
+				{
+					if (usart_cmd_64.count > 0)
+					{
+						req = usart_pid_cmd_parse_64(&usart_cmd_64);
+						switch (req.type)
+						{
+							case PID_CMD_KP:
+							{
+								tmp_kp = req.param;
+							} break;
+							
+							case PID_CMD_KI:
+							{
+								tmp_ki = req.param;
+							} break;
+							
+							case PID_CMD_KD:
+							{
+								tmp_kd = req.param;
+							} break;
+							
+							case PID_CMD_SET:
+							{
+								pid.kp = tmp_kp;
+								pid.ki = tmp_ki;
+								pid.kd = tmp_kd;
+								uart_write("Setting... \r\n");
+							} break;
+							
+							case PID_CMD_INSPECT:
+							{
+								uart_print_num(pid.kp.raw);
+								uart_putc(',');
+								uart_print_num(pid.ki.raw);
+								uart_putc(',');
+								uart_print_num(pid.kd.raw);
+								uart_write("\r\n");
+							} break;
+							
+							case PID_CMD_COUNT:
+							{
+								uart_write("ERR: unknown\r\n");
+							} break;
+						}
+					}
+					for (i = 0; i < 64; i++)
+					{
+						usart_cmd_64.line[i] = 0;
+					}
+					usart_cmd_64.count = 0;
+				}
+				else if (usart_cmd_64.count < 64)
+				{
+					usart_cmd_64.line[usart_cmd_64.count++] = c;
+				}
+				
+			}
+		}
+		{
+			pid_update_result output;
+			adc_count_t setpoint, adc_val;
+			
+			adc_val = adc1_read();
+			/* disabling pid for now */
 #if 1
-		setpoint.raw = 2048;
-        output = pid_update(&pid, setpoint, adc_val);
+			setpoint.raw = 2048;
+			output = pid_update(&pid, setpoint, adc_val);
 #else
-		setpoint.raw = 0;
-		output.duty_cycle.raw = (adc_val.raw * pid.output_max) / 4096;
+			setpoint.raw = 0;
+			output.duty_cycle.raw = (adc_val.raw * pid.output_max) / 4096;
 #endif
-        TIM2->CCR1 = (uint32_t)output.duty_cycle.raw;
+			TIM2->CCR1 = (uint32_t)output.duty_cycle.raw;
 
-        uart_print_num(tick * 33); /* 33ms is estimated loop time */
-		uart_putc(',');
-		uart_print_num(setpoint.raw);
-		uart_putc(',');
-		uart_print_num(adc_val.raw);
-		uart_putc(',');
-		uart_print_num(output.error);
-		uart_putc(',');
-		uart_print_num(output.duty_cycle.raw);
-        uart_write("\r\n");
-
+			if (tick % 30 == 0)
+			{
+				uart_print_num(tick * 33); /* 33ms is estimated loop time */
+				uart_putc(',');
+				uart_print_num(setpoint.raw);
+				uart_putc(',');
+				uart_print_num(adc_val.raw);
+				uart_putc(',');
+				uart_print_num(output.error);
+				uart_putc(',');
+				uart_print_num(output.duty_cycle.raw);
+				uart_write("\r\n");
+			}
+		}
         delay(720000); /* Replace with SysTick Sunday */
 		tick++;
     } /* Using interrupts for flow control */

@@ -22,16 +22,16 @@ SECTIONS
     } > FLASH
 
     .data :
-    {
-        . = ALIGN(4);
-        _sdata = .;
-        *(.data)
-        *(.data*)
-        . = ALIGN(4);
-        _edata = .;
-    } > SRAM AT> FLASH
+	{
+		. = ALIGN(4);
+		_sdata = .;
+		*(.data)
+		*(.data*)
+		. = ALIGN(4);
+		_edata = .;
+	} > SRAM AT> FLASH
 
-    _sidata = LOADADDR(.data);
+	_sidata = LOADADDR(.data);
 
     .bss :
     {
