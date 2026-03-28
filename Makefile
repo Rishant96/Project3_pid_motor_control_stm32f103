@@ -10,10 +10,11 @@ SIZE    = $(PREFIX)size
 TARGET  = firmware
 
 # Compiler flags: C89, no stdlib, thumb, cortex-m3
-CFLAGS  = -std=c89 -Wall -Wextra -Os \
+CFLAGS  = -std=c89 -Wall -Wextra -Wpedantic -Werror -Os \
           -mcpu=cortex-m3 -mthumb \
           -ffreestanding -nostdlib \
-          -fno-common
+          -fno-common \
+		  -DDEBUG
 
 LDFLAGS = -T linker.ld -nostdlib -Wl,--gc-sections
 LDLIBS  = -lgcc

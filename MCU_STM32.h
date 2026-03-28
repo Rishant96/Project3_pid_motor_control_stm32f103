@@ -1,6 +1,12 @@
 #ifndef STM32F103_H
 #define STM32F103_H
 
+#ifdef DEBUG
+	#define Assert(expr) do { if (!(expr)) { __asm volatile("bkpt #0"); } } while(0)
+#else
+	#define Assert(expr) ((void)0)
+#endif
+
 #include <stdint.h>
 
 #define PERIPH_BASE 	((uint32_t)0x40000000)
@@ -152,26 +158,8 @@ typedef struct {
 
 #define USART_SR_TXE      (1U << 7)
 
-
 #define USART_CR1_UE      (1U << 13)
 #define USART_CR1_TE      (1U << 3)
-
-typedef struct {
-	volatile uint32_t MCR;
-	volatile uint32_t MSR;
-	volatile uint32_t TSR;
-	volatile uint32_t RF0R;
-	volatile uint32_t RF1R;
-	volatile uint32_t IER;
-	volatile uint32_t ESR;
-	volatile uint32_t BTR;
-	volatile uint32_t _reserved[88];
-	volatile uint32_t TI0R;
-	volatile uint32_t TDT0R;
-	volatile uint32_t TDL0R;
-} CAN1_t;
-
-#define CAN1              ((CAN1_t *)(CAN1_BASE + 0x0000))
 
 typedef struct {
     volatile uint32_t SR;
@@ -202,5 +190,32 @@ typedef struct {
 #define ADC_CR2_ADON      (1U << 0)
 #define ADC_CR2_CAL       (1U << 2)
 #define ADC_CR2_RSTCAL    (1U << 3)
+
+typedef struct { int16_t raw; } fixed16_t;
+
+#define FIXED16_SHIFT 8
+#define fixed16_from_int(x) ((int16_t)((x) << FIXED16_SHIFT))
+#define fixed16_to_int(x)   ((int)(x) >> FIXED16_SHIFT)
+
+#define fixed16_Kp_from_frac(output_max, error_at_saturation) \
+		  ((int16_t)(((output_max) << FIXED16_SHIFT) / (error_at_saturation)))
+
+#define fixed16_Ki(extra_output, error, loops_per_sec) \
+		  ((int16_t)(((extra_output) * 256) / ((error) * (loops_per_sec))))
+		  
+#define fixed16_Kd(output_adj, error_change) \
+		  ((int16_t)(((output_adj) << FIXED16_SHIFT) / (error_change)))
+
+typedef struct { int16_t raw; } adc_count_t;
+typedef struct { uint8_t  raw; } duty_t;
+
+typedef struct {
+	fixed16_t kp, ki, kd;
+	int16_t prev_error;
+	int32_t integral;
+	int32_t integral_max;    /* MUST set before use — zero clamps integral */
+	int16_t output_min;
+	int16_t output_max;      /* MUST set before use — zero clamps all output */
+} pid_state_t;
 
 #endif

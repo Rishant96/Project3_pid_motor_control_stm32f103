@@ -1,5 +1,10 @@
 #include "MCU_STM32.h"
 
+static void delay(volatile uint32_t count)
+{
+    while (count--);
+}
+
 static void clock_init(void)
 {
 	FLASH_R->ACR = FLASH_ACR_LATENCY_2WS | FLASH_ACR_PRFTBE;
@@ -43,6 +48,15 @@ static void gpio_init(void)
 	GPIOA->CRL &= ~(0xFU << 4);
 }
 
+static adc_count_t adc1_read(void)
+{
+	adc_count_t result;
+    ADC1->CR2 |= ADC_CR2_ADON;
+    while (!(ADC1->SR & ADC_SR_EOC)) { };
+	result.raw = (uint16_t)ADC1->DR;
+    return result;
+}
+
 static void adc1_init(void)
 {
 	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
@@ -55,13 +69,6 @@ static void adc1_init(void)
     while (ADC1->CR2 & ADC_CR2_RSTCAL);
     ADC1->CR2 |= ADC_CR2_CAL;
     while (ADC1->CR2 & ADC_CR2_CAL);
-}
-
-static uint16_t adc1_read(void)
-{
-    ADC1->CR2 |= ADC_CR2_ADON;
-    while (!(ADC1->SR & ADC_SR_EOC));
-    return (uint16_t)ADC1->DR;
 }
 
 static void uart_putc(char c)
@@ -124,20 +131,18 @@ void NMI_Handler(void)
 	}
 }
 
-typedef struct {
-  int32_t kp, ki, kd;
-  int32_t integral, integral_max;
-  int32_t prev_error;
-  int32_t output_min, output_max;
-} PID_State;
-
-int32_t pid_update(PID_State *pid, int32_t setpoint, int32_t measurement)
+duty_t pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t measurement)
 {
+	duty_t result;
+	
     int32_t error;
     int32_t derivative;
     int32_t output;
+	
+	Assert(pid != 0);
+	Assert(pid->output_max > pid->output_min);  /* catches ZII trap */
 
-    error = setpoint - measurement;
+    error = setpoint.raw - measurement.raw;
 
     pid->integral += error;
     if (pid->integral > pid->integral_max)  pid->integral = pid->integral_max;
@@ -145,37 +150,30 @@ int32_t pid_update(PID_State *pid, int32_t setpoint, int32_t measurement)
 
     derivative = error - pid->prev_error;
 
-    output = (pid->kp * error
-            + pid->ki * pid->integral
-            + pid->kd * derivative) >> 8;
+    output = fixed16_to_int(pid->kp.raw * error
+            + pid->ki.raw * pid->integral
+            + pid->kd.raw * derivative);
 
     pid->prev_error = error;
 
     if (output > pid->output_max) output = pid->output_max;
     if (output < pid->output_min) output = pid->output_min;
 
-    return output;
-}
-
-static void delay(volatile uint32_t count)
-{
-    while (count--);
+	result.raw = output;
+    return result;
 }
 
 int main(void)
 {
-    PID_State pid;
-	pid.kp = 256;
-	pid.ki = 0;
-	pid.kd = 0;
-	pid.integral = 0;
-	pid.prev_error = 0;
-	pid.integral_max = 500;
-	pid.output_min = 0;
-	pid.output_max = 49;
-	
-    uint16_t adc_val;
-    int32_t output;
+    pid_state_t pid;
+    pid.kp.raw = fixed16_Kp_from_frac(49, 4095);
+    pid.ki.raw = fixed16_Ki(0, 5, 30);
+    pid.kd.raw = fixed16_Kd(0, 50);
+    pid.integral = 0;
+    pid.prev_error = 0;
+    pid.integral_max = 500;
+    pid.output_min = 0;
+    pid.output_max = 49;    /* MUST set — zero clamps all output */
 	
 	clock_init();
 	gpio_init();
@@ -186,22 +184,31 @@ int main(void)
     uart_write("Project 3 - PID Motor Control\r\n");
 
     for (;;) {
+		duty_t output;
+		adc_count_t setpoint, adc_val;
+		
         adc_val = adc1_read();
 		/* disabling pid for now */
-#if 0
-        output = pid_update(&pid, 2048, (int32_t)adc_val);
+#if 1
+		setpoint.raw = 2048;
+        output = pid_update(&pid, setpoint, adc_val);
 #else
-		output = (adc_val * pid.output_max) / 4096;
+		output.raw = (adc_val.raw * pid.output_max) / 4096;
 #endif
-        TIM2->CCR1 = (uint32_t)output;
+        TIM2->CCR1 = (uint32_t)output.raw;
 
-        uart_write("ADC: ");
-        uart_print_num(adc_val);
+        uart_write(" Kp: ");
+        uart_print_num(pid.kp.raw);
+        uart_write(" Ki: ");
+        uart_print_num(pid.ki.raw);
+        uart_write(" Kd: ");
+        uart_print_num(pid.kd.raw);
+        uart_write(" ADC: ");
+        uart_print_num(adc_val.raw);
         uart_write(" PWM: ");
-        uart_print_num((uint16_t)output);
+        uart_print_num((uint16_t)output.raw);
         uart_write("\r\n");
 
         delay(720000);
     } /* Using interrupts for flow control */
-
 }
