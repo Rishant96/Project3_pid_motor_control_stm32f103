@@ -5,77 +5,6 @@ static void delay(volatile uint32_t count)
     while (count--);
 }
 
-static void clock_init(void)
-{
-	FLASH_R->ACR = FLASH_ACR_LATENCY_2WS | FLASH_ACR_PRFTBE;
-	
-	RCC->CR |= RCC_CR_HSEON;
-	while (!(RCC->CR & RCC_CR_HSERDY));
-	
-	RCC->CR |= RCC_CR_CSSON;
-	
-	RCC->CFGR |= RCC_CFGR_PPRE1_DIV2 | RCC_CFGR_PLLSRC | RCC_CFGR_PLLMUL9;
-
-	/* Turn on PLL and wait */
-	RCC->CR |= RCC_CR_PLLON;
-	while (!(RCC->CR & RCC_CR_PLLRDY));
-	
-	/* Switch system clock to PLL */
-	RCC->CFGR = (RCC->CFGR & ~(3U << 0)) | RCC_CFGR_SW_PLL;
-	while ((RCC->CFGR & RCC_CFGR_SWS_MASK) != RCC_CFGR_SWS_PLL);
-}
-
-static void gpio_init(void)
-{
-	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN
-				  |  RCC_APB2ENR_IOPCEN
-				  |  RCC_APB2ENR_AFIOEN
-				  |  RCC_APB2ENR_USART1EN;
-	
-	/* Setup Pin 0 */
-	GPIOA->CRL &= ~(0xFU << 0);
-	GPIOA->CRL |=  (0xBU << 0);
-	
-	/* Setup Pin 1 */
-	GPIOA->CRL &= ~(0xFU << 4);
-	
-	/* Setup Pin 9 */
-	GPIOA->CRH &= ~(0xFU << 4);
-	GPIOA->CRH |=  (0xBU << 4);
-	
-	/* Setup Pin 10 */
-	GPIOA->CRH &= ~(0xFU << 8);
-	GPIOA->CRH |=  (0x4U << 8);
-		
-	/* Setup Pin 13 */
-	GPIOC->CRH &= ~(0xFU << 20);
-	GPIOC->CRH |=  (0x2U << 20);
-}
-
-static adc_count_t adc1_read(void)
-{
-	adc_count_t result;
-    ADC1->CR2 |= ADC_CR2_ADON;
-    while (!(ADC1->SR & ADC_SR_EOC)) { };
-	result.raw = (uint16_t)ADC1->DR;
-	Assert(result.raw <= 4095);
-    return result;
-}
-
-static void adc1_init(void)
-{
-	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
-	
-    ADC1->SQR3 = 1;
-
-    ADC1->CR2 |= ADC_CR2_ADON;
-
-    ADC1->CR2 |= ADC_CR2_RSTCAL;
-    while (ADC1->CR2 & ADC_CR2_RSTCAL);
-    ADC1->CR2 |= ADC_CR2_CAL;
-    while (ADC1->CR2 & ADC_CR2_CAL);
-}
-
 static void uart_putc(char c)
 {
     while (!(USART1->SR & USART_SR_TXE));
@@ -119,6 +48,103 @@ static void uart_init(void)
 {
 	USART1->BRR = 0x271;
 	USART1->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
+}
+
+static void clock_init(void)
+{
+	FLASH_R->ACR = FLASH_ACR_LATENCY_2WS | FLASH_ACR_PRFTBE;
+	
+	RCC->CR |= RCC_CR_HSEON;
+	while (!(RCC->CR & RCC_CR_HSERDY));
+	
+	RCC->CR |= RCC_CR_CSSON;
+	
+	RCC->CFGR |= RCC_CFGR_PPRE1_DIV2 | RCC_CFGR_PLLSRC | RCC_CFGR_PLLMUL9;
+
+	/* Turn on PLL and wait */
+	RCC->CR |= RCC_CR_PLLON;
+	while (!(RCC->CR & RCC_CR_PLLRDY));
+	
+	/* Switch system clock to PLL */
+	RCC->CFGR = (RCC->CFGR & ~(3U << 0)) | RCC_CFGR_SW_PLL;
+	while ((RCC->CFGR & RCC_CFGR_SWS_MASK) != RCC_CFGR_SWS_PLL);
+}
+
+static void gpio_init(void)
+{
+	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN
+				  |  RCC_APB2ENR_IOPBEN
+				  |  RCC_APB2ENR_IOPCEN
+				  |  RCC_APB2ENR_AFIOEN
+				  |  RCC_APB2ENR_USART1EN;
+	
+	/* Setup Pin A0 */
+	GPIOA->CRL &= ~(0xFU << 0);
+	GPIOA->CRL |=  (0xBU << 0);
+	
+	/* Setup Pin A1 */
+	GPIOA->CRL &= ~(0xFU << 4);
+	
+	/* Setup Pin A9 */
+	GPIOA->CRH &= ~(0xFU << 4);
+	GPIOA->CRH |=  (0xBU << 4);
+	
+	/* Setup Pin A10 */
+	GPIOA->CRH &= ~(0xFU << 8);
+	GPIOA->CRH |=  (0x4U << 8);
+	
+	/* Setup Pin B10 */
+	GPIOB->CRH &= ~(0xFU << 8);
+	GPIOB->CRH |=  (0x4U << 8);
+		
+	/* Setup Pin C13 */
+	GPIOC->CRH &= ~(0xFU << 20);
+	GPIOC->CRH |=  (0x2U << 20);
+}
+
+static void exti10_init(void)
+{
+	AFIO->EXTICR[2] = (0x1 << 8);
+
+	EXTI->FTSR |= (1U << 10);
+	EXTI->IMR  |= (1U << 10);
+	
+	NVIC_ISER1 = (1U << 8);
+}
+
+void EXTI15_10_IRQHandler(void)
+{
+	static int edge_count = 0;
+	if (EXTI->PR & (1U << 10)) {
+		EXTI->PR = (1U << 10);
+		uart_write("new edge, total = ");
+		uart_print_unum(edge_count++);
+		uart_write("\r\n");
+	}
+}
+
+static adc_count_t adc1_read(void)
+{
+	adc_count_t result;
+    ADC1->CR2 |= ADC_CR2_ADON;
+    while (!(ADC1->SR & ADC_SR_EOC)) { };
+	result.raw = (uint16_t)ADC1->DR;
+	Assert(result.raw <= 4095);
+    return result;
+}
+
+static void adc1_init(void)
+{
+	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+	
+    ADC1->SQR3 = 1;
+
+    ADC1->CR2 |= ADC_CR2_ADON;
+
+    ADC1->CR2 |= ADC_CR2_RSTCAL;
+    while (ADC1->CR2 & ADC_CR2_RSTCAL);
+    ADC1->CR2 |= ADC_CR2_CAL;
+    while (ADC1->CR2 & ADC_CR2_CAL);
 }
 
 void NMI_Handler(void)
@@ -293,7 +319,7 @@ int main(void)
     pid.output_min = 0;
     pid.output_max = 49;    /* MUST set — zero clamps all output */
 		
-	for (i = 0; i < 256; i++)
+	for (i = 0; i < PID_CMD_BUFFER_MAX; i++)
 	{
 		usart_cmd_64.line[i] = 0;
 	}
@@ -304,6 +330,7 @@ int main(void)
 	uart_init();
 	adc1_init();
 	tim2_init();
+	exti10_init();
 	
     uart_write("Project 3 - PID Motor Control\r\n");
 	tick = 0;
@@ -359,13 +386,13 @@ int main(void)
 							} break;
 						}
 					}
-					for (i = 0; i < 64; i++)
+					for (i = 0; i < PID_CMD_BUFFER_MAX; i++)
 					{
 						usart_cmd_64.line[i] = 0;
 					}
 					usart_cmd_64.count = 0;
 				}
-				else if (usart_cmd_64.count < 64)
+				else if (usart_cmd_64.count < PID_CMD_BUFFER_MAX)
 				{
 					usart_cmd_64.line[usart_cmd_64.count++] = c;
 				}

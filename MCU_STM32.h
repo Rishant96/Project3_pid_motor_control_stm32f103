@@ -112,6 +112,14 @@ typedef struct {
 #define TIM_CCER_CC1E     (1U << 0)
 
 typedef struct {
+    volatile uint32_t EVCR;       /* 0x00 */
+    volatile uint32_t MAPR;       /* 0x04 */
+    volatile uint32_t EXTICR[4];  /* 0x08–0x14 */
+} AFIO_t;
+
+#define AFIO ((AFIO_t *)(APB2_BASE + 0x0000))
+
+typedef struct {
     volatile uint32_t IMR;
     volatile uint32_t EMR;
     volatile uint32_t RTSR;
@@ -125,8 +133,7 @@ typedef struct {
 #define NVIC_ISER0        (*(volatile uint32_t *)0xE000E100)
 #define NVIC_ISER1        (*(volatile uint32_t *)0xE000E104)
 
-#define IRQ_EXTI0         6
-#define IRQ_TIM2          28
+#define IRQ_EXTI2         8
 
 typedef struct {
     volatile uint32_t ACR;          /* 0x00 */
@@ -227,9 +234,11 @@ typedef struct {
 	int16_t error;
 } pid_update_result;
 
+#define PID_CMD_BUFFER_MAX 64
+
 typedef struct {
 	uint8_t count;
-	char line[64];
+	char line[PID_CMD_BUFFER_MAX];
 } cmd_buffer_64;
 
 typedef enum {
