@@ -84,9 +84,9 @@ static void uart_write(const char *s)
     }
 }
 
-static void uart_print_num(uint16_t val)
+static void uart_print_unum(uint32_t val)
 {
-    char buf[6];
+    char buf[11];
     int i = 0;
 
     if (val == 0) {
@@ -102,6 +102,12 @@ static void uart_print_num(uint16_t val)
     while (i > 0) {
         uart_putc(buf[--i]);
     }
+}
+
+static void uart_print_num(int32_t val)
+{
+	if (val < 0) { uart_putc('-'); uart_print_unum(-val); }
+    else uart_print_unum(val);
 }
 
 static void uart_init(void)
@@ -131,9 +137,9 @@ void NMI_Handler(void)
 	}
 }
 
-duty_t pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t measurement)
+pid_update_result pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t measurement)
 {
-	duty_t result;
+	pid_update_result result;
 	
     int32_t error;
     int32_t derivative;
@@ -159,12 +165,15 @@ duty_t pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t measuremen
     if (output > pid->output_max) output = pid->output_max;
     if (output < pid->output_min) output = pid->output_min;
 
-	result.raw = output;
+	result.duty_cycle.raw = output;
+	result.error = (int16_t)error;
     return result;
 }
 
 int main(void)
 {
+	static uint32_t tick;
+	
     pid_state_t pid;
     pid.kp.raw = fixed16_Kp_from_frac(49, 4095);
     pid.ki.raw = fixed16_Ki(0, 5, 30);
@@ -182,9 +191,9 @@ int main(void)
 	tim2_init();
 	
     uart_write("Project 3 - PID Motor Control\r\n");
-
+	tick = 0;
     for (;;) {
-		duty_t output;
+		pid_update_result output;
 		adc_count_t setpoint, adc_val;
 		
         adc_val = adc1_read();
@@ -193,22 +202,22 @@ int main(void)
 		setpoint.raw = 2048;
         output = pid_update(&pid, setpoint, adc_val);
 #else
-		output.raw = (adc_val.raw * pid.output_max) / 4096;
+		output.duty_cycle.raw = (adc_val.raw * pid.output_max) / 4096;
 #endif
-        TIM2->CCR1 = (uint32_t)output.raw;
+        TIM2->CCR1 = (uint32_t)output.duty_cycle.raw;
 
-        uart_write(" Kp: ");
-        uart_print_num(pid.kp.raw);
-        uart_write(" Ki: ");
-        uart_print_num(pid.ki.raw);
-        uart_write(" Kd: ");
-        uart_print_num(pid.kd.raw);
-        uart_write(" ADC: ");
-        uart_print_num(adc_val.raw);
-        uart_write(" PWM: ");
-        uart_print_num((uint16_t)output.raw);
+        uart_print_num(tick * 33); /* 33ms is estimated loop time */
+		uart_putc(',');
+		uart_print_num(setpoint.raw);
+		uart_putc(',');
+		uart_print_num(adc_val.raw);
+		uart_putc(',');
+		uart_print_num(output.error);
+		uart_putc(',');
+		uart_print_num(output.duty_cycle.raw);
         uart_write("\r\n");
 
         delay(720000);
+		tick++;
     } /* Using interrupts for flow control */
 }

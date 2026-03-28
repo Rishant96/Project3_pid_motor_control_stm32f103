@@ -1,5 +1,5 @@
-#ifndef STM32F103_H
-#define STM32F103_H
+#ifndef MCU_STM32_h
+#define MCU_STM32_h
 
 #ifdef DEBUG
 	#define Assert(expr) do { if (!(expr)) { __asm volatile("bkpt #0"); } } while(0)
@@ -206,7 +206,7 @@ typedef struct { int16_t raw; } fixed16_t;
 #define fixed16_Kd(output_adj, error_change) \
 		  ((int16_t)(((output_adj) << FIXED16_SHIFT) / (error_change)))
 
-typedef struct { int16_t raw; } adc_count_t;
+typedef struct { uint16_t raw; } adc_count_t;
 typedef struct { uint8_t  raw; } duty_t;
 
 typedef struct {
@@ -217,5 +217,11 @@ typedef struct {
 	int16_t output_min;
 	int16_t output_max;      /* MUST set before use — zero clamps all output */
 } pid_state_t;
+
+typedef struct {
+	duty_t duty_cycle;
+	uint8_t _;
+	int16_t error;
+} pid_update_result;
 
 #endif
