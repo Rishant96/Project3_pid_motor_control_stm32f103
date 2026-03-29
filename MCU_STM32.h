@@ -256,4 +256,14 @@ typedef struct {
 	fixed16_t param;
 } usart_pid_cmd;
 
+#define __DMB() __asm volatile("dmb" ::: "memory")
+
+typedef struct {
+	uint8_t *base;
+	uint16_t capacity;
+	uint16_t mask;
+	volatile uint16_t head;
+	volatile uint16_t tail;
+} ring_buf_t;
+
 #endif

@@ -1,8 +1,126 @@
 #include "MCU_STM32.h"
 
+static uint8_t uart_tx_buf[256];
+static ring_buf_t uart_tx_ring;
+static volatile int edge_count = 0;
+
 static void delay(volatile uint32_t count)
 {
     while (count--);
+}
+
+static void rb_init(ring_buf_t *buffer, uint8_t *array, uint16_t capacity)
+{
+	Assert(capacity > 0);
+	Assert(buffer != 0);	
+	Assert(array != 0);
+	Assert((capacity & (capacity - 1)) == 0);
+	
+	buffer->base = array;
+	buffer->capacity = capacity;
+	buffer->mask = capacity - 1;
+	buffer->head = buffer->tail = 0;
+}
+
+static int8_t rb_get(ring_buf_t *rb, uint8_t *byte)
+{
+	int8_t result;
+	uint16_t next;
+	
+	Assert(rb != 0);
+	Assert(rb->base != 0);
+	next = (rb->tail + 1) & rb->mask;
+	
+	if (rb->head != rb->tail)
+	{
+		*byte = rb->base[rb->tail];
+		__DMB();
+		rb->tail = next;
+		result = 0;
+	}
+	else
+	{
+		result = -1;
+	}
+	
+	return result;
+}
+
+static int8_t rb_put(ring_buf_t *rb, uint8_t byte)
+{
+	int8_t result;
+	uint16_t next;
+	
+	Assert(rb != 0);
+	Assert(rb->base != 0);
+	next = (rb->head + 1) & rb->mask;
+	
+	if (next != rb->tail)
+	{
+		rb->base[rb->head] = byte;
+		__DMB();
+		rb->head = next;
+		result = 0;
+	}
+	else
+	{
+		result = -1;
+	}
+	
+	return result;
+}
+
+static int8_t rb_puts(ring_buf_t *rb, const char *msg)
+{
+	int8_t result;
+
+	Assert(rb != 0);	
+	Assert(rb->base != 0);
+	Assert(msg != 0);
+	
+	result = 0;
+	
+	while(*msg != 0 && result == 0)
+	{
+		result = rb_put(rb, *msg);
+		msg++;
+	}
+	
+	return result;
+}
+
+static int8_t rb_put_unum(ring_buf_t *rb, uint32_t val)
+{
+	int8_t result = -1, i = 0;
+	char buf[11];
+	
+	if (val == 0) {
+        result = rb_put(rb, '0');
+        return result;
+    }
+
+    while (val > 0) 
+	{
+        buf[i++] = '0' + (val % 10);
+        val /= 10;
+    }
+
+    while (i > 0) 
+	{
+        result = rb_put(rb, buf[--i]);
+    }
+	
+	return result;
+}
+
+static int8_t rb_put_num(ring_buf_t *rb, int32_t val)
+{
+	int8_t result = -1;
+	
+	if (val < 0) { result = rb_put(rb, '-'); result = rb_put_unum(rb, -val); }
+    else result = rb_put_unum(rb, val);
+	
+	return result;
 }
 
 static void uart_putc(char c)
@@ -13,11 +131,13 @@ static void uart_putc(char c)
 
 static void uart_write(const char *s)
 {
-    while (*s) {
+    while (*s) 
+	{
         uart_putc(*s++);
     }
 }
 
+/*
 static void uart_print_unum(uint32_t val)
 {
     char buf[11];
@@ -28,12 +148,14 @@ static void uart_print_unum(uint32_t val)
         return;
     }
 
-    while (val > 0) {
+    while (val > 0) 
+	{
         buf[i++] = '0' + (val % 10);
         val /= 10;
     }
 
-    while (i > 0) {
+    while (i > 0) 
+	{
         uart_putc(buf[--i]);
     }
 }
@@ -43,6 +165,7 @@ static void uart_print_num(int32_t val)
 	if (val < 0) { uart_putc('-'); uart_print_unum(-val); }
     else uart_print_unum(val);
 }
+*/
 
 static void uart_init(void)
 {
@@ -114,12 +237,10 @@ static void exti10_init(void)
 
 void EXTI15_10_IRQHandler(void)
 {
-	static int edge_count = 0;
+	
 	if (EXTI->PR & (1U << 10)) {
 		EXTI->PR = (1U << 10);
-		uart_write("new edge, total = ");
-		uart_print_unum(edge_count++);
-		uart_write("\r\n");
+		edge_count++;
 	}
 }
 
@@ -150,8 +271,8 @@ static void adc1_init(void)
 void NMI_Handler(void)
 {
 	if (RCC->CIR & RCC_CIR_CSSF) {
+		rb_puts(&uart_tx_ring, "HSE Failure\r\n");
 		RCC->CIR |= RCC_CIR_CSSC;
-		uart_write("HSE Failure\r\n");
 	}
 }
 
@@ -325,6 +446,8 @@ int main(void)
 	}
 	usart_cmd_64.count = 0;
 	
+	rb_init(&uart_tx_ring, uart_tx_buf, sizeof(uart_tx_buf));
+	
 	clock_init();
 	gpio_init();
 	uart_init();
@@ -335,6 +458,14 @@ int main(void)
     uart_write("Project 3 - PID Motor Control\r\n");
 	tick = 0;
     for (;;) {
+		{
+			uint8_t c;
+			while (rb_get(&uart_tx_ring, &c) == 0)
+			{
+				while (!(USART1->SR & USART_SR_TXE));
+				USART1->DR = c;
+			}
+		}
 		{
 			usart_pid_cmd req;
 			if (USART1->SR & USART_SR_RXNE)
@@ -367,22 +498,22 @@ int main(void)
 								pid.kp = tmp_kp;
 								pid.ki = tmp_ki;
 								pid.kd = tmp_kd;
-								uart_write("Setting... \r\n");
+								rb_puts(&uart_tx_ring, "Setting... \r\n");
 							} break;
 							
 							case PID_CMD_INSPECT:
 							{
-								uart_print_num(pid.kp.raw);
-								uart_putc(',');
-								uart_print_num(pid.ki.raw);
-								uart_putc(',');
-								uart_print_num(pid.kd.raw);
-								uart_write("\r\n");
+								rb_put_num(&uart_tx_ring, pid.kp.raw);
+								rb_put(&uart_tx_ring, ',');
+								rb_put_num(&uart_tx_ring, pid.ki.raw);
+								rb_put(&uart_tx_ring, ',');
+								rb_put_num(&uart_tx_ring, pid.kd.raw);
+								rb_puts(&uart_tx_ring, "\r\n");
 							} break;
 							
 							case PID_CMD_COUNT:
 							{
-								uart_write("ERR: unknown\r\n");
+								rb_puts(&uart_tx_ring, "ERR: unknown\r\n");
 							} break;
 						}
 					}
@@ -416,16 +547,18 @@ int main(void)
 
 			if (tick % 30 == 0)
 			{
-				uart_print_num(tick * 33); /* 33ms is estimated loop time */
-				uart_putc(',');
-				uart_print_num(setpoint.raw);
-				uart_putc(',');
-				uart_print_num(adc_val.raw);
-				uart_putc(',');
-				uart_print_num(output.error);
-				uart_putc(',');
-				uart_print_num(output.duty_cycle.raw);
-				uart_write("\r\n");
+				rb_put_num(&uart_tx_ring, tick * 33); /* 33ms is estimated loop time */
+				rb_put(&uart_tx_ring, ',');
+				rb_put_num(&uart_tx_ring, setpoint.raw);
+				rb_put(&uart_tx_ring, ',');
+				rb_put_num(&uart_tx_ring, adc_val.raw);
+				rb_put(&uart_tx_ring, ',');
+				rb_put_num(&uart_tx_ring, output.error);
+				rb_put(&uart_tx_ring, ',');
+				rb_put_num(&uart_tx_ring, output.duty_cycle.raw);
+				rb_put(&uart_tx_ring, ',');
+				rb_put_num(&uart_tx_ring, edge_count);
+				rb_puts(&uart_tx_ring, "\r\n");
 			}
 		}
         delay(720000); /* Replace with SysTick Sunday */
