@@ -222,6 +222,7 @@ typedef struct { int16_t raw; } fixed16_t;
 
 typedef struct { uint16_t raw; } adc_count_t;
 typedef struct { uint8_t  raw; } duty_t;
+typedef struct { uint16_t raw; } rpm_t;
 
 typedef struct {
 	fixed16_t kp, ki, kd;

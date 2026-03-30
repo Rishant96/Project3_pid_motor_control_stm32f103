@@ -7,11 +7,6 @@ static volatile int edge_count = 0;
 static volatile uint32_t sys_tick_ms = 0;
 static volatile uint32_t last_edge_ms = 0;
 
-static void delay(volatile uint32_t count)
-{
-    while (count--);
-}
-
 static void rb_init(ring_buf_t *buffer, uint8_t *array, uint16_t capacity)
 {
 	Assert(capacity > 0);
@@ -253,6 +248,7 @@ void EXTI15_10_IRQHandler(void)
 	}
 }
 
+#if 0
 static adc_count_t adc1_read(void)
 {
 	adc_count_t result;
@@ -262,6 +258,7 @@ static adc_count_t adc1_read(void)
 	Assert(result.raw <= 4095);
     return result;
 }
+#endif
 
 static void adc1_init(void)
 {
@@ -303,7 +300,7 @@ static void tim2_init(void)
 	TIM2->CR1 = TIM_CR1_CEN;
 }
 
-pid_update_result pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t measurement)
+pid_update_result pid_update(pid_state_t *pid, rpm_t setpoint, rpm_t measurement)
 {
 	pid_update_result result;
 	
@@ -314,7 +311,7 @@ pid_update_result pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t
 	Assert(pid != 0);
 	Assert(pid->output_max > pid->output_min);  /* catches ZII trap */
 
-    error = setpoint.raw - measurement.raw;
+	error = (int16_t)setpoint.raw -(int16_t) measurement.raw;
 
     pid->integral += error;
     if (pid->integral > pid->integral_max)  pid->integral = pid->integral_max;
@@ -330,6 +327,10 @@ pid_update_result pid_update(pid_state_t *pid, adc_count_t setpoint, adc_count_t
 
     if (output > pid->output_max) output = pid->output_max;
     if (output < pid->output_min) output = pid->output_min;
+	if (output > 0 && output < 32) output = 32;
+
+	if (output >= pid->output_max && error > 0) pid->integral -= error;
+	if (output <= pid->output_min && error < 0) pid->integral -= error;
 
 	result.duty_cycle.raw = output;
 	result.error = (int16_t)error;
@@ -439,18 +440,21 @@ static usart_pid_cmd usart_pid_cmd_parse_64(cmd_buffer_64 *buffer)
 
 int main(void)
 {
-	static uint32_t tick, current_rpm = 0;
+	rpm_t current_rpm, setpoint;
+	pid_update_result output;
 	cmd_buffer_64 usart_cmd_64;
 	int i;
     pid_state_t pid;
 	fixed16_t tmp_kp, tmp_ki, tmp_kd;
 	
-    pid.kp.raw = tmp_kp.raw = fixed16_Kp_from_frac(49, 4095);
-    pid.ki.raw = tmp_ki.raw = fixed16_Ki(0, 5, 30);
+	current_rpm.raw = 0;
+
+    pid.kp.raw = tmp_kp.raw = 2; /* fixed16_Kp_from_frac(49, 2730); */
+    pid.ki.raw = tmp_ki.raw = 1; /* fixed16_Ki(0, 5, 30); */
     pid.kd.raw = tmp_kd.raw = fixed16_Kd(0, 50);
     pid.integral = 0;
     pid.prev_error = 0;
-    pid.integral_max = 500;
+    pid.integral_max = 12000;
     pid.output_min = 0;
     pid.output_max = 49;    /* MUST set — zero clamps all output */
 		
@@ -473,17 +477,22 @@ int main(void)
 	exti10_init();
 	
     uart_write("Project 3 - PID Motor Control\r\n");
-	tick = 0;
-    for (;;) {
+	
+    for (;;) 
+	{
 		{
 			static uint32_t last_rpm_ms = 0;
 			static uint32_t last_edge_snapshot = 0;
 
-			if ((sys_tick_ms - last_rpm_ms) >= 1000) {
+			if ((sys_tick_ms - last_rpm_ms) >= 200) {
 				uint32_t edges = edge_count - last_edge_snapshot;
-				current_rpm = edges * 60;
+				current_rpm.raw = edges * 300;
 				last_edge_snapshot = edge_count;
 				last_rpm_ms = sys_tick_ms;
+
+				setpoint.raw = 2730;
+				output = pid_update(&pid, setpoint, current_rpm);
+				TIM2->CCR1 = (uint32_t)output.duty_cycle.raw;
 			}
 		}
 		{
@@ -559,28 +568,12 @@ int main(void)
 			}
 		}
 		{
-			pid_update_result output;
-			adc_count_t setpoint, adc_val;
-			
-			adc_val = adc1_read();
-			/* disabling pid for now */
-#if 0
-			setpoint.raw = 2048;
-			output = pid_update(&pid, setpoint, adc_val);
-#else
-			setpoint.raw = 0;
-			output.duty_cycle.raw = (adc_val.raw * pid.output_max) / 4096;
-			output.error = 0;
-#endif
-			TIM2->CCR1 = (uint32_t)output.duty_cycle.raw;
-
-			if (tick % 5 == 0)
+			static uint32_t last_print_ms = 0;
+			if ((sys_tick_ms - last_print_ms) >= 1000)
 			{
-				rb_put_num(&uart_tx_ring, tick * 33); /* 33ms is estimated loop time */
+				rb_put_num(&uart_tx_ring, sys_tick_ms);
 				rb_put(&uart_tx_ring, ',');
 				rb_put_num(&uart_tx_ring, setpoint.raw);
-				rb_put(&uart_tx_ring, ',');
-				rb_put_num(&uart_tx_ring, adc_val.raw);
 				rb_put(&uart_tx_ring, ',');
 				rb_put_num(&uart_tx_ring, output.error);
 				rb_put(&uart_tx_ring, ',');
@@ -588,13 +581,16 @@ int main(void)
 				rb_put(&uart_tx_ring, ',');
 				rb_put_num(&uart_tx_ring, edge_count);
 				rb_put(&uart_tx_ring, ',');
-				rb_put_num(&uart_tx_ring, sys_tick_ms);
-				rb_put(&uart_tx_ring, ',');
-				rb_put_num(&uart_tx_ring, current_rpm);
+				rb_put_num(&uart_tx_ring, current_rpm.raw);
 				rb_puts(&uart_tx_ring, "\r\n");
+
+				last_print_ms = sys_tick_ms;
 			}
 		}
-        delay(720000); /* Replace with SysTick Sunday */
-		tick++;
+		{
+        	static uint32_t last_loop_ms = 0;
+			while ((sys_tick_ms - last_loop_ms) < 33);
+			last_loop_ms = sys_tick_ms;
+		}
     } /* Using interrupts for flow control */
 }
