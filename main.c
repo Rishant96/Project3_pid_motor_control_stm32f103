@@ -246,7 +246,7 @@ void EXTI15_10_IRQHandler(void)
 		EXTI->PR = (1U << 10);
 		
 		now = sys_tick_ms;
-		if ((now - last_edge_ms) >= 50) {
+		if ((now - last_edge_ms) >= 10) {
 			edge_count++;
 			last_edge_ms = now;
 		}
@@ -439,7 +439,7 @@ static usart_pid_cmd usart_pid_cmd_parse_64(cmd_buffer_64 *buffer)
 
 int main(void)
 {
-	static uint32_t tick;
+	static uint32_t tick, current_rpm = 0;
 	cmd_buffer_64 usart_cmd_64;
 	int i;
     pid_state_t pid;
@@ -475,6 +475,17 @@ int main(void)
     uart_write("Project 3 - PID Motor Control\r\n");
 	tick = 0;
     for (;;) {
+		{
+			static uint32_t last_rpm_ms = 0;
+			static uint32_t last_edge_snapshot = 0;
+
+			if ((sys_tick_ms - last_rpm_ms) >= 1000) {
+				uint32_t edges = edge_count - last_edge_snapshot;
+				current_rpm = edges * 60;
+				last_edge_snapshot = edge_count;
+				last_rpm_ms = sys_tick_ms;
+			}
+		}
 		{
 			uint8_t c;
 			while (rb_get(&uart_tx_ring, &c) == 0)
@@ -576,6 +587,10 @@ int main(void)
 				rb_put_num(&uart_tx_ring, output.duty_cycle.raw);
 				rb_put(&uart_tx_ring, ',');
 				rb_put_num(&uart_tx_ring, edge_count);
+				rb_put(&uart_tx_ring, ',');
+				rb_put_num(&uart_tx_ring, sys_tick_ms);
+				rb_put(&uart_tx_ring, ',');
+				rb_put_num(&uart_tx_ring, current_rpm);
 				rb_puts(&uart_tx_ring, "\r\n");
 			}
 		}
