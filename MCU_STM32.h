@@ -135,6 +135,10 @@ typedef struct {
 
 #define IRQ_EXTI2         8
 
+#define SYSTICK_CSR       (*(volatile uint32_t *)0xE000E010)
+#define SYSTICK_RVR       (*(volatile uint32_t *)0xE000E014)
+#define SYSTICK_CVR       (*(volatile uint32_t *)0xE000E018)
+
 typedef struct {
     volatile uint32_t ACR;          /* 0x00 */
     volatile uint32_t KEYR;         /* 0x04 */

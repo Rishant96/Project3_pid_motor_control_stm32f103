@@ -4,6 +4,9 @@ static uint8_t uart_tx_buf[256];
 static ring_buf_t uart_tx_ring;
 static volatile int edge_count = 0;
 
+static volatile uint32_t sys_tick_ms = 0;
+static volatile uint32_t last_edge_ms = 0;
+
 static void delay(volatile uint32_t count)
 {
     while (count--);
@@ -237,10 +240,16 @@ static void exti10_init(void)
 
 void EXTI15_10_IRQHandler(void)
 {
-	
+	uint32_t now;
+
 	if (EXTI->PR & (1U << 10)) {
 		EXTI->PR = (1U << 10);
-		edge_count++;
+		
+		now = sys_tick_ms;
+		if ((now - last_edge_ms) >= 50) {
+			edge_count++;
+			last_edge_ms = now;
+		}
 	}
 }
 
@@ -274,6 +283,11 @@ void NMI_Handler(void)
 		rb_puts(&uart_tx_ring, "HSE Failure\r\n");
 		RCC->CIR |= RCC_CIR_CSSC;
 	}
+}
+
+void SysTick_Handler(void)
+{
+	sys_tick_ms++;
 }
 
 static void tim2_init(void)
@@ -449,6 +463,9 @@ int main(void)
 	rb_init(&uart_tx_ring, uart_tx_buf, sizeof(uart_tx_buf));
 	
 	clock_init();
+	SYSTICK_RVR = 71999;
+	SYSTICK_CVR = 0;
+	SYSTICK_CSR = 0X7;
 	gpio_init();
 	uart_init();
 	adc1_init();
