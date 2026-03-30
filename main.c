@@ -559,6 +559,7 @@ int main(void)
 #else
 			setpoint.raw = 0;
 			output.duty_cycle.raw = (adc_val.raw * pid.output_max) / 4096;
+			output.error = 0;
 #endif
 			TIM2->CCR1 = (uint32_t)output.duty_cycle.raw;
 
