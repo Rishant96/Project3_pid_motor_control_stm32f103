@@ -553,7 +553,7 @@ int main(void)
 			
 			adc_val = adc1_read();
 			/* disabling pid for now */
-#if 1
+#if 0
 			setpoint.raw = 2048;
 			output = pid_update(&pid, setpoint, adc_val);
 #else
@@ -562,7 +562,7 @@ int main(void)
 #endif
 			TIM2->CCR1 = (uint32_t)output.duty_cycle.raw;
 
-			if (tick % 30 == 0)
+			if (tick % 5 == 0)
 			{
 				rb_put_num(&uart_tx_ring, tick * 33); /* 33ms is estimated loop time */
 				rb_put(&uart_tx_ring, ',');
