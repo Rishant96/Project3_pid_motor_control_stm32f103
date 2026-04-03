@@ -3,3 +3,5 @@
 *.binvenv/
 .venv/
 env/
+venv/
+*.bin

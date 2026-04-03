@@ -341,8 +341,8 @@
       APPLY
     </button>
     <button class="tune-btn tune-btn-outline"
-            data-on:click="$cmd = 'INSPECT'; @post('/cmd');">
-      INSPECT
+            data-on:click="$tuneKp = $kp; $tuneKi = $ki; $tuneKd = $kd;">
+      REVERT
     </button>
   </div>
 
