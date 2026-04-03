@@ -1,3 +1,5 @@
 *.o
 *.elf
-*.bin
+*.binvenv/
+.venv/
+env/
